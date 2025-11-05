@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db';
-import type { Conversation, ConversationSummary } from '@/models/conversation';
+import type { Conversation, ConversationSummary, ConversationInsights } from '@/models/conversation';
 import { ObjectId } from 'mongodb';
 
 const COLLECTION_NAME = 'conversations';
@@ -154,4 +154,28 @@ export async function deleteConversation(
   await db.collection(COLLECTION_NAME).deleteOne({
     _id: new ObjectId(conversationId),
   });
+}
+
+/**
+ * Update conversation insights/summary
+ */
+export async function updateConversationInsights(
+  conversationId: string,
+  insights: ConversationInsights
+): Promise<void> {
+  const db = await getDb();
+  
+  if (!ObjectId.isValid(conversationId)) {
+    throw new Error('Invalid conversation ID');
+  }
+
+  await db.collection(COLLECTION_NAME).updateOne(
+    { _id: new ObjectId(conversationId) },
+    {
+      $set: { 
+        insights,
+        updatedAt: new Date(),
+      },
+    }
+  );
 }
