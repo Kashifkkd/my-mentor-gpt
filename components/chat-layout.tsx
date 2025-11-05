@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ChatNavbar } from './chat-navbar';
 import { ChatSidebar } from './chat-sidebar';
 import { NewConversationDialog } from './new-conversation-dialog';
@@ -51,7 +51,9 @@ export function ChatLayout({
 
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const urlAssistantType = searchParams.get('assistant');
+  const isAssistantsPage = pathname?.startsWith('/assistants');
   
   const currentUser = user || defaultUser;
   const currentWorkspaceData = currentWorkspace || workspaces?.[0] || {
@@ -65,6 +67,19 @@ export function ChatLayout({
   const resolvedAssistant = urlAssistantType 
     ? (availableAssistantTypes.find(a => a.id === urlAssistantType) || currentAssistant || availableAssistantTypes[0])
     : (currentAssistant || availableAssistantTypes[0]);
+
+  // Prepare assistants list for sidebar when on assistants page
+  // We need to fetch the actual assistant data with completion info
+  const assistantsList = isAssistantsPage 
+    ? availableAssistantTypes.map(a => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        systemPrompt: '', // Will be populated from actual assistant data
+        model: 'gpt-4',
+        temperature: 0.7,
+      }))
+    : [];
 
   const [conversationList, setConversationList] = useState<ConversationSummary[]>(conversations || []);
   const [isLoading, setIsLoading] = useState(isLoadingConversations || false);
@@ -148,6 +163,7 @@ export function ChatLayout({
           user={currentUser}
           workspace={currentWorkspaceData}
           conversations={conversationList}
+          assistants={assistantsList}
           isLoading={isLoading}
           onNewChat={onNewChat || handleNewChat}
           onDeleteConversation={onDeleteConversation || handleDeleteConversation}
