@@ -1,9 +1,10 @@
 'use client';
 
+import { Suspense } from 'react';
 import { ChatLayout } from "@/components/chat-layout";
 import { assistantTypes, defaultWorkspaces } from "@/lib/assistant-config";
 
-export default function ChatPage() {
+function ChatPageContent() {
   return (
     <ChatLayout
       assistantTypes={assistantTypes}
@@ -18,6 +19,18 @@ export default function ChatPage() {
         </div>
       </div>
     </ChatLayout>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-full items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    }>
+      <ChatPageContent />
+    </Suspense>
   );
 }
 
