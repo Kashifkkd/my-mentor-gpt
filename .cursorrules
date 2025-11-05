@@ -1,0 +1,176 @@
+# My Mentor GPT - AI Chat Application Rules
+
+## Project Overview
+This is an AI chat application (similar to ChatGPT) built with Next.js 16, React 19, TypeScript, and Tailwind CSS v4.
+
+## Tech Stack
+- **Framework**: Next.js 16 with App Router
+- **Language**: TypeScript (strict mode enabled)
+- **Styling**: Tailwind CSS v4
+- **UI Components**: shadcn/ui (Radix UI primitives)
+- **React**: React 19
+- **Icons**: lucide-react
+- **Fonts**: Geist Sans & Geist Mono
+
+## Code Style & Standards
+
+### TypeScript
+- Use strict TypeScript practices
+- Define proper types/interfaces for all props, API responses, and data structures
+- Avoid `any` types - use `unknown` if the type is truly unknown
+- Use type inference where appropriate but be explicit for public APIs
+- Prefer interfaces for object shapes, types for unions/intersections
+
+### React & Next.js
+- Use React Server Components by default, Client Components only when needed (use 'use client' directive)
+- Prefer async Server Components for data fetching
+- Use Next.js App Router conventions (app directory structure)
+- Leverage Next.js built-in Image component for optimized images
+- Use proper React patterns: hooks, memo, useMemo, useCallback when appropriate
+- Implement proper error boundaries for error handling
+- Follow React 19 best practices
+
+### Component Structure
+- Create reusable, composable components in the `components/` directory
+- Use shadcn/ui components from `components/ui/` when available
+- Keep components focused and single-purpose
+- Extract complex logic into custom hooks
+- Use proper prop validation with TypeScript
+- Follow the component naming convention: PascalCase
+
+### Styling
+- Use Tailwind CSS v4 utility classes for styling
+- Follow mobile-first responsive design approach
+- Use dark mode variants with the `dark:` prefix
+- Maintain consistent spacing using Tailwind's spacing scale
+- Use semantic color tokens from the theme configuration
+- Prefer Tailwind utilities over custom CSS when possible
+- Use `cn()` utility from `lib/utils.ts` for conditional className merging
+
+### File Organization
+- Place components in `components/` directory
+- UI primitives go in `components/ui/`
+- Utility functions go in `lib/`
+- API routes go in `app/api/`
+- Types/interfaces can go in a `types/` directory or co-located with components
+- Use the `@/` alias for imports (configured in tsconfig.json)
+- **File Naming Convention**: Component files should use kebab-case (e.g., `chat-interface.tsx` for the ChatInterface component)
+
+## AI Chat Application Specific Guidelines
+
+### Chat Interface
+- Implement a clean, intuitive chat interface similar to ChatGPT
+- Support streaming responses for real-time message updates
+- Handle typing indicators during AI responses
+- Implement proper message history management
+- Support markdown rendering in chat messages
+- Handle code blocks with syntax highlighting
+- Implement message copy, edit, and regenerate features
+
+### State Management
+- Use React state management appropriate for the feature complexity
+- Consider Zustand or React Context for global state (chat history, user preferences)
+- Use URL state for shareable chat sessions when appropriate
+- Implement optimistic UI updates where applicable
+
+### API Integration
+- Create API routes in `app/api/` for backend communication
+- Handle streaming responses for AI chat
+- Implement proper error handling and retry logic
+- Add loading states for async operations
+- Use proper TypeScript types for API requests/responses
+
+### User Experience
+- Implement smooth animations and transitions
+- Add keyboard shortcuts for common actions (e.g., Cmd/Ctrl+K for new chat)
+- Support conversation persistence (localStorage or database)
+- Handle empty states gracefully
+- Implement proper loading and error states
+- Ensure accessibility (ARIA labels, keyboard navigation)
+
+### Performance
+- Optimize for fast initial page load
+- Implement code splitting for large components
+- Use Next.js Image optimization
+- Lazy load heavy components when appropriate
+- Minimize re-renders with proper React optimization
+- Implement virtual scrolling for long chat histories
+
+## Best Practices
+
+### Error Handling
+- Always handle errors gracefully with user-friendly messages
+- Log errors appropriately for debugging
+- Use Next.js error boundaries for component error handling
+- Validate user inputs on both client and server side
+
+### Security
+- Never expose API keys or sensitive credentials in client-side code
+- Validate and sanitize user inputs
+- Implement proper authentication/authorization when needed
+- Use environment variables for sensitive configuration
+
+### Testing (when added)
+- Write tests for critical business logic
+- Test component rendering and user interactions
+- Test API routes and error scenarios
+
+### Documentation
+- Add JSDoc comments for complex functions and components
+- Document API routes and their expected inputs/outputs
+- Keep README.md updated with setup and usage instructions
+
+## Code Examples
+
+### Component Structure
+```typescript
+'use client' // Only if needed
+
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
+interface ChatMessageProps {
+  message: string
+  role: 'user' | 'assistant'
+  className?: string
+}
+
+export function ChatMessage({ message, role, className }: ChatMessageProps) {
+  return (
+    <div className={cn('flex gap-4', className)}>
+      {/* Component implementation */}
+    </div>
+  )
+}
+```
+
+### API Route Structure
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    // Handle request
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+## Development Workflow
+- Run development server on port 9000: `npm run dev`
+- Use ESLint for code quality: `npm run lint`
+- Follow Git best practices with meaningful commit messages
+- Create feature branches for new functionality
+
+## Notes
+- The project name suggests this is a mentor/educational AI chat application
+- Consider implementing conversation memory and context management
+- Plan for multi-turn conversations with context awareness
+- Consider implementing conversation export/sharing features
