@@ -11,6 +11,12 @@ import {
 import { getModelConfig, defaultModel } from '@/lib/models';
 import type { ChatMessage } from '@/models/conversation';
 import { buildSystemPrompt } from '@/lib/assistant-fields';
+import { auth } from '@/auth';
+import {
+  findUserById,
+  refreshUserUsageIfNeeded,
+  incrementUserMessageUsage,
+} from '@/lib/db/users';
 
 // Console colors for highlighting
 const colors = {
@@ -27,9 +33,47 @@ const colors = {
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
+const EMAIL_VERIFICATION_THRESHOLD = 12;
+
 export async function POST(request: NextRequest) {
   try {
-    const { messages, conversationId, userId, modelId } = await request.json();
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const dbUser = await findUserById(session.user.id);
+    if (!dbUser) {
+      return Response.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const userWithUsage = await refreshUserUsageIfNeeded(dbUser);
+
+    if (!userWithUsage.emailVerified && userWithUsage.usage.messagesUsed >= EMAIL_VERIFICATION_THRESHOLD) {
+      return Response.json(
+        {
+          error: 'EMAIL_VERIFICATION_REQUIRED',
+          messagesUsed: userWithUsage.usage.messagesUsed,
+          threshold: EMAIL_VERIFICATION_THRESHOLD,
+        },
+        { status: 403 },
+      );
+    }
+
+    if (userWithUsage.usage.messagesUsed >= userWithUsage.usage.messageLimit) {
+      return Response.json(
+        {
+          error: 'PLAN_LIMIT_REACHED',
+          plan: userWithUsage.plan,
+          messagesUsed: userWithUsage.usage.messagesUsed,
+          messageLimit: userWithUsage.usage.messageLimit,
+        },
+        { status: 403 },
+      );
+    }
+
+    const { messages, conversationId, modelId } = await request.json();
 
     // Validate input
     if (!messages || !Array.isArray(messages)) {
@@ -38,6 +82,13 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const updatedUserUsage = await incrementUserMessageUsage(userWithUsage._id);
+
+    const usageSummary = {
+      messagesUsed: updatedUserUsage?.usage.messagesUsed ?? userWithUsage.usage.messagesUsed + 1,
+      messageLimit: updatedUserUsage?.usage.messageLimit ?? userWithUsage.usage.messageLimit,
+    };
 
     // Get model configuration
     const selectedModelId = modelId || defaultModel.id;
@@ -92,6 +143,7 @@ export async function POST(request: NextRequest) {
 
     // Handle conversation storage
     let currentConversationId = conversationId;
+    const userId = session.user.id;
 
     // Extract workspace and assistant type from request
     const workspaceId = request.headers.get('x-workspace-id') || undefined;
@@ -243,6 +295,8 @@ export async function POST(request: NextRequest) {
     return result.toTextStreamResponse({
       headers: {
         'X-Conversation-Id': currentConversationId,
+        'X-Usage-Messages-Used': String(usageSummary.messagesUsed),
+        'X-Usage-Messages-Limit': String(usageSummary.messageLimit),
       },
     });
   } catch (error) {

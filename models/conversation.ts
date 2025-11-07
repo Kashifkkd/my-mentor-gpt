@@ -18,7 +18,7 @@ export interface ConversationInsights {
 
 export interface Conversation {
   id?: string;
-  userId?: string;
+  userId: string;
   workspaceId?: string;
   assistantType?: string;
   title?: string;

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+import { auth } from '@/auth';
 import {
   getConversation,
   updateConversationTitle,
@@ -14,6 +16,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
     if (!id) {
@@ -30,6 +38,10 @@ export async function GET(
         { error: 'Conversation not found' },
         { status: 404 }
       );
+    }
+
+    if (conversation.userId !== session.user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
     return NextResponse.json({ conversation });
@@ -51,6 +63,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { title } = body;
@@ -67,6 +85,12 @@ export async function PATCH(
         { error: 'Title is required' },
         { status: 400 }
       );
+    }
+
+    const conversation = await getConversation(id);
+
+    if (!conversation || conversation.userId !== session.user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
     await updateConversationTitle(id, title);
@@ -92,6 +116,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
     if (!id) {
@@ -99,6 +129,12 @@ export async function DELETE(
         { error: 'Conversation ID is required' },
         { status: 400 }
       );
+    }
+
+    const conversation = await getConversation(id);
+
+    if (!conversation || conversation.userId !== session.user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
     await deleteConversation(id);

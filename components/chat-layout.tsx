@@ -1,23 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ChatNavbar } from './chat-navbar';
 import { ChatSidebar } from './chat-sidebar';
 import { NewConversationDialog } from './new-conversation-dialog';
 import type { AssistantType, Workspace } from '@/lib/types/assistant';
 import type { ConversationSummary } from '@/models/conversation';
-
-interface User {
-  id: string;
-  name?: string;
-  email?: string;
-  image?: string;
-}
+import { useCurrentSession } from '@/hooks/use-current-session';
+import { ChatEnvironmentProvider } from '@/hooks/use-chat-environment';
 
 interface ChatLayoutProps {
   children: React.ReactNode;
-  user?: User;
   workspaces?: Workspace[];
   assistantTypes?: AssistantType[];
   currentWorkspace?: Workspace;
@@ -31,7 +25,6 @@ interface ChatLayoutProps {
 
 export function ChatLayout({
   children,
-  user,
   workspaces,
   assistantTypes,
   currentWorkspace,
@@ -42,43 +35,75 @@ export function ChatLayout({
   onNewChat,
   onDeleteConversation,
 }: ChatLayoutProps) {
-  // Default user if not provided
-  const defaultUser: User = {
-    id: 'user-1',
-    name: 'User',
-    email: 'user@example.com',
-  };
-
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const urlAssistantType = searchParams.get('assistant');
   const isAssistantsPage = pathname?.startsWith('/assistants');
-  
-  const currentUser = user || defaultUser;
-  const currentWorkspaceData = currentWorkspace || workspaces?.[0] || {
-    id: 'personal',
-    name: 'Personal',
-    slug: 'personal',
-  };
 
-  // Get assistant from URL param or use provided/default
+  const { session, status } = useCurrentSession();
+
+  const currentUser = useMemo(() => {
+    if (!session?.user) {
+      return undefined;
+    }
+
+    return {
+      id: session.user.id,
+      name: session.user.name ?? undefined,
+      email: session.user.email ?? undefined,
+      image: session.user.image ?? undefined,
+    };
+  }, [session?.user]);
+
+  const fallbackWorkspace = useMemo(() => {
+    if (currentWorkspace) {
+      return currentWorkspace;
+    }
+    if (workspaces && workspaces.length > 0) {
+      return workspaces[0];
+    }
+    return {
+      id: 'personal',
+      name: 'Personal',
+      slug: 'personal',
+    } satisfies Workspace;
+  }, [currentWorkspace, workspaces]);
+
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(fallbackWorkspace.id);
+
+  useEffect(() => {
+    if (fallbackWorkspace.id !== activeWorkspaceId) {
+      setActiveWorkspaceId(fallbackWorkspace.id);
+    }
+  }, [fallbackWorkspace.id, activeWorkspaceId]);
+
+  const currentWorkspaceData = useMemo(() => {
+    if (workspaces && workspaces.length > 0) {
+      return workspaces.find((workspaceItem) => workspaceItem.id === activeWorkspaceId) || fallbackWorkspace;
+    }
+
+    if (currentWorkspace && currentWorkspace.id === activeWorkspaceId) {
+      return currentWorkspace;
+    }
+
+    return fallbackWorkspace;
+  }, [workspaces, currentWorkspace, activeWorkspaceId, fallbackWorkspace]);
+
   const availableAssistantTypes = assistantTypes || [];
-  const resolvedAssistant = urlAssistantType 
-    ? (availableAssistantTypes.find(a => a.id === urlAssistantType) || currentAssistant || availableAssistantTypes[0])
-    : (currentAssistant || availableAssistantTypes[0]);
+  const resolvedAssistant = urlAssistantType
+    ? availableAssistantTypes.find((a) => a.id === urlAssistantType) || currentAssistant || availableAssistantTypes[0]
+    : currentAssistant || availableAssistantTypes[0];
 
-  // Prepare assistants list for sidebar when on assistants page
-  // We need to fetch the actual assistant data with completion info
-  const assistantsList = isAssistantsPage 
-    ? availableAssistantTypes.map(a => ({
-        id: a.id,
-        name: a.name,
-        description: a.description,
-        systemPrompt: '', // Will be populated from actual assistant data
-        model: 'gpt-4',
-        temperature: 0.7,
-      }))
+  const assistantsList = isAssistantsPage
+    ? availableAssistantTypes.map((a) => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      systemPrompt: '',
+      model: 'gpt-4',
+      temperature: 0.7,
+    }))
     : [];
 
   const [conversationList, setConversationList] = useState<ConversationSummary[]>(conversations || []);
@@ -86,8 +111,11 @@ export function ChatLayout({
   const [isNewConversationDialogOpen, setIsNewConversationDialogOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Fetch conversations on mount and when workspace/assistant changes
   useEffect(() => {
+    if (status !== 'authenticated' || !currentUser) {
+      return;
+    }
+
     const fetchConversations = async () => {
       setIsLoading(true);
       try {
@@ -98,10 +126,15 @@ export function ChatLayout({
         if (resolvedAssistant?.id) {
           params.append('assistantType', resolvedAssistant.id);
         }
-        
+
         const queryString = params.toString();
         const url = queryString ? `/api/conversations?${queryString}` : '/api/conversations';
         const response = await fetch(url);
+        if (response.status === 401) {
+          router.push('/login');
+          return;
+        }
+
         if (response.ok) {
           const data = await response.json();
           setConversationList(data.conversations || []);
@@ -115,7 +148,6 @@ export function ChatLayout({
 
     fetchConversations();
 
-    // Listen for new conversation creation
     const handleConversationCreated = () => {
       fetchConversations();
     };
@@ -124,20 +156,32 @@ export function ChatLayout({
     return () => {
       window.removeEventListener('conversation-created', handleConversationCreated as EventListener);
     };
-  }, [currentWorkspaceData.id, resolvedAssistant?.id]);
+  }, [currentWorkspaceData.id, resolvedAssistant?.id, router, status, currentUser]);
+
+  const handleWorkspaceSelectionChange = (workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId);
+    onWorkspaceChange?.(workspaceId);
+  };
 
   const handleNewChat = () => {
     setIsNewConversationDialogOpen(true);
   };
 
   const handleDeleteConversation = async (id: string) => {
+    if (status !== 'authenticated' || !currentUser) {
+      return;
+    }
+
     try {
       const response = await fetch(`/api/conversations/${id}`, {
         method: 'DELETE',
       });
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
       if (response.ok) {
-        setConversationList(prev => prev.filter(conv => conv.id !== id));
-        // If we're on the deleted conversation, redirect to /chat (which shows welcome message)
+        setConversationList((prev) => prev.filter((conv) => conv.id !== id));
         if (window.location.pathname === `/chat/${id}`) {
           router.push('/chat');
         }
@@ -147,41 +191,69 @@ export function ChatLayout({
     }
   };
 
-  return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Navbar - Full Width */}
-      <ChatNavbar
-        workspaces={workspaces}
-        currentWorkspace={currentWorkspaceData}
-        onWorkspaceChange={onWorkspaceChange}
-        onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
-      />
-
-      {/* Content Area with Sidebar */}
-      <div className="flex-1 flex overflow-hidden">
-        <ChatSidebar
-          user={currentUser}
-          workspace={currentWorkspaceData}
-          conversations={conversationList}
-          assistants={assistantsList}
-          isLoading={isLoading}
-          onNewChat={onNewChat || handleNewChat}
-          onDeleteConversation={onDeleteConversation || handleDeleteConversation}
-          isMobileOpen={isMobileSidebarOpen}
-          onMobileClose={() => setIsMobileSidebarOpen(false)}
-        />
-        <main className="flex-1 overflow-auto">{children}</main>
+  if (status === 'loading') {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <span className="text-sm text-muted-foreground">Loading your workspace...</span>
       </div>
+    );
+  }
 
-      {/* New Conversation Dialog */}
-      <NewConversationDialog
-        open={isNewConversationDialogOpen}
-        onOpenChange={setIsNewConversationDialogOpen}
-        assistantTypes={availableAssistantTypes}
-        currentWorkspaceId={currentWorkspaceData.id}
-        defaultAssistantType={resolvedAssistant?.id}
-      />
-    </div>
+  if (status === 'unauthenticated') {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <span className="text-sm text-muted-foreground">Redirecting to login…</span>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <span className="text-sm text-muted-foreground">Preparing your workspace...</span>
+      </div>
+    );
+  }
+
+  return (
+    <ChatEnvironmentProvider
+      value={{
+        workspaceId: currentWorkspaceData.id ?? null,
+        assistantType: resolvedAssistant?.id ?? null,
+      }}
+    >
+      <div className="flex h-screen flex-col bg-background">
+        <ChatNavbar
+          workspaces={workspaces}
+          currentWorkspace={currentWorkspaceData}
+          onWorkspaceChange={handleWorkspaceSelectionChange}
+          onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
+        />
+
+        <div className="flex flex-1 overflow-hidden">
+          <ChatSidebar
+            user={currentUser}
+            workspace={currentWorkspaceData}
+            conversations={conversationList}
+            assistants={assistantsList}
+            isLoading={isLoading}
+            onNewChat={onNewChat || handleNewChat}
+            onDeleteConversation={onDeleteConversation || handleDeleteConversation}
+            isMobileOpen={isMobileSidebarOpen}
+            onMobileClose={() => setIsMobileSidebarOpen(false)}
+          />
+          <main className="flex-1 overflow-auto">{children}</main>
+        </div>
+
+        <NewConversationDialog
+          open={isNewConversationDialogOpen}
+          onOpenChange={setIsNewConversationDialogOpen}
+          assistantTypes={availableAssistantTypes}
+          currentWorkspaceId={currentWorkspaceData.id}
+          defaultAssistantType={resolvedAssistant?.id}
+        />
+      </div>
+    </ChatEnvironmentProvider>
   );
 }
 

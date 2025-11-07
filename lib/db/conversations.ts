@@ -14,12 +14,15 @@ const COLLECTION_NAME = 'conversations';
  */
 export async function createConversation(
   initialMessages: Conversation['messages'] = [],
-  userId?: string,
+  userId: string,
   workspaceId?: string,
   assistantType?: string,
   customFields?: Record<string, string>
 ): Promise<string> {
   const db = await getDb();
+  if (!userId) {
+    throw new Error('User ID is required to create a conversation');
+  }
   const conversation = {
     userId,
     workspaceId,

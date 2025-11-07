@@ -25,8 +25,15 @@ function ChatPageWithIdContent() {
   useEffect(() => {
     if (conversationId) {
       fetch(`/api/conversations/${conversationId}`)
-        .then(res => res.json())
+        .then(res => {
+          if (res.status === 401) {
+            router.push('/login');
+            return null;
+          }
+          return res.json();
+        })
         .then(data => {
+          if (!data) return;
           if (data.conversation?.assistantType) {
             setConversationAssistantType(data.conversation.assistantType);
           }
@@ -40,7 +47,7 @@ function ChatPageWithIdContent() {
       assistantTypes={assistantTypes}
       workspaces={defaultWorkspaces}
     >
-      <div className="flex h-full w-full flex-col p-0 sm:p-2 md:p-4">
+      <div className="flex h-full w-full flex-col p-0">
         {tab === 'collab' && conversationId ? (
           <CollaborationCanvas conversationId={conversationId} />
         ) : tab === 'insights' && conversationId ? (

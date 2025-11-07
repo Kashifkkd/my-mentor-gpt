@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import {
   MessageSquare,
   SquarePlus,
@@ -217,6 +218,10 @@ interface UserMenuProps {
 }
 
 function UserMenu({ user, isExpanded = false }: UserMenuProps) {
+  const handleSignOut = () => {
+    void signOut({ callbackUrl: '/login' });
+  };
+
   const menuContent = (
     <DropdownMenuContent align="start" className="w-56">
       <DropdownMenuLabel>My Account</DropdownMenuLabel>
@@ -226,7 +231,12 @@ function UserMenu({ user, isExpanded = false }: UserMenuProps) {
         Settings
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={() => {}}>
+      <DropdownMenuItem
+        onSelect={(event) => {
+          event.preventDefault();
+          handleSignOut();
+        }}
+      >
         <LogOut className="mr-2 h-4 w-4" />
         Sign out
       </DropdownMenuItem>

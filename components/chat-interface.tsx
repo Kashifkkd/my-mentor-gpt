@@ -27,12 +27,17 @@ import {
 } from '@/components/ui/shadcn-io/ai/reasoning';
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ui/shadcn-io/ai/source';
 import { Button } from '@/components/ui/button';
-import { MicIcon, PaperclipIcon, RotateCcwIcon, Sparkles, Lightbulb, MessageSquare, BookOpen, Zap, Users } from 'lucide-react';
+import { MicIcon, PaperclipIcon, RotateCcwIcon, Sparkles, Lightbulb, MessageSquare, BookOpen, Zap, Users, Heart, Briefcase, Code } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { type FormEventHandler, useCallback, useState, useEffect } from 'react';
+import { type FormEventHandler, useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import { models as modelConfigs, defaultModel } from '@/lib/models';
 import { assistantTypes } from '@/lib/assistant-config';
+import { useTextSelection } from '@/hooks/use-text-selection';
+import { TextSelectionPopup } from '@/components/text-selection-popup';
+import { useCurrentSession } from '@/hooks/use-current-session';
+import { EmailVerificationDialog } from '@/components/email-verification-dialog';
+import { useChatEnvironment } from '@/hooks/use-chat-environment';
 
 type ChatMessage = {
   id: string;
@@ -43,6 +48,8 @@ type ChatMessage = {
   sources?: Array<{ title: string; url: string }>;
   isStreaming?: boolean;
 };
+
+const EMAIL_VERIFICATION_THRESHOLD = 12;
 
 // ============================================================================
 // Sub-components
@@ -136,13 +143,15 @@ function ChatHeader({
   );
 }
 
+type Suggestion = {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  prompt: string;
+  color: string;
+};
+
 interface ChatWelcomeScreenProps {
-  suggestions: Array<{
-    icon: React.ComponentType<{ className?: string }>;
-    title: string;
-    prompt: string;
-    color: string;
-  }>;
+  suggestions: Suggestion[];
   onSuggestionClick: (prompt: string) => void;
 }
 
@@ -274,7 +283,7 @@ function ChatInputArea({
   onSubmit,
 }: ChatInputAreaProps) {
   return (
-    <div className="border-t p-2 sm:p-4">
+    <div className="border-t p-2 sm:p-4" data-chat-input>
       <PromptInput onSubmit={onSubmit}>
         <PromptInputTextarea
           value={inputValue}
@@ -350,6 +359,8 @@ const ChatInterface = () => {
     : null;
   const assistantType = searchParams.get('assistant') || null;
 
+  const { workspaceId: currentWorkspaceIdFromContext } = useChatEnvironment();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [selectedModel, setSelectedModel] = useState(defaultModel.id);
@@ -358,6 +369,53 @@ const ChatInterface = () => {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [conversationAssistantType, setConversationAssistantType] = useState<string | null>(null);
   const [newConversationId, setNewConversationId] = useState<string | null>(null);
+  const [verificationDialogOpen, setVerificationDialogOpen] = useState(false);
+  const [verificationData, setVerificationData] = useState({
+    threshold: EMAIL_VERIFICATION_THRESHOLD,
+    messagesUsed: 0,
+  });
+
+  const { refresh: refreshSession } = useCurrentSession();
+
+  const chatInterfaceRef = useRef<HTMLDivElement>(null);
+
+  const { text, rects, selection: textSelection } = useTextSelection();
+
+  // Check if current selection is inside chat interface but NOT in input/textarea
+  const isSelectionInsideChat = (() => {
+    if (!text || text.trim().length === 0) return false;
+    if (!textSelection || textSelection.rangeCount === 0) return false;
+    
+    const range = textSelection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    
+    // Check if selection is inside chat interface
+    const isInChatInterface = chatInterfaceRef.current?.contains(
+      container.nodeType === Node.TEXT_NODE ? container.parentNode : container
+    ) ?? false;
+    
+    if (!isInChatInterface) return false;
+    
+    // Check if selection is inside input/textarea - exclude those
+    const nodeToCheck = container.nodeType === Node.TEXT_NODE ? container.parentNode : container;
+    if (nodeToCheck) {
+      const element = nodeToCheck as HTMLElement;
+      // Check if it's inside a textarea or input
+      const isInInput = element.closest('textarea, input, [data-chat-input]');
+      if (isInInput) return false;
+    }
+    
+    return true;
+  })();
+
+  useEffect(() => {
+    if (conversationId && conversationId !== currentConversationId) {
+      setCurrentConversationId(conversationId);
+    }
+    if (!conversationId && currentConversationId) {
+      setCurrentConversationId(null);
+    }
+  }, [conversationId, currentConversationId]);
 
   // Load messages from conversation when conversationId is present
   useEffect(() => {
@@ -370,6 +428,12 @@ const ChatInterface = () => {
       setIsLoadingMessages(true);
       try {
         const response = await fetch(`/api/conversations/${conversationId}`);
+
+        if (response.status === 401) {
+          router.push('/login');
+          return;
+        }
+
         if (response.ok) {
           const data = await response.json();
           const conversation = data.conversation;
@@ -402,7 +466,7 @@ const ChatInterface = () => {
     };
 
     loadConversation();
-  }, [conversationId]);
+  }, [conversationId, router]);
 
   // Update assistant type when URL param changes
   useEffect(() => {
@@ -431,12 +495,21 @@ const ChatInterface = () => {
 
     try {
       // Call API to create conversation and get response
+      const requestHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (assistantType) {
+        requestHeaders['x-assistant-type'] = assistantType;
+      }
+
+      if (currentWorkspaceIdFromContext) {
+        requestHeaders['x-workspace-id'] = currentWorkspaceIdFromContext;
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(assistantType && { 'x-assistant-type': assistantType }),
-        },
+        headers: requestHeaders,
         body: JSON.stringify({
           messages: [...messages, userMessage].map(msg => ({
             role: msg.role,
@@ -447,9 +520,60 @@ const ChatInterface = () => {
         }),
       });
 
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
+
+      if (response.status === 403) {
+        const data = await response.json().catch(() => ({}));
+        setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
+        setIsTyping(false);
+
+        if (data?.error === 'EMAIL_VERIFICATION_REQUIRED') {
+          setVerificationData({
+            threshold: data.threshold ?? EMAIL_VERIFICATION_THRESHOLD,
+            messagesUsed: data.messagesUsed ?? 0,
+          });
+          setVerificationDialogOpen(true);
+          return;
+        }
+
+        if (data?.error === 'PLAN_LIMIT_REACHED') {
+          const planMessage = `You've reached your ${data.plan ?? 'current'} plan limit (${data.messagesUsed ?? '—'}/${data.messageLimit ?? '—'} messages). Upgrade your plan to continue.`;
+          setMessages(prev => [
+            ...prev,
+            {
+              id: nanoid(),
+              content: planMessage,
+              role: 'assistant',
+              timestamp: new Date(),
+            },
+          ]);
+          return;
+        }
+
+        throw new Error(data?.error ?? 'Failed to send message');
+      }
+
       if (!response.ok) {
         throw new Error('Failed to send message');
       }
+
+      const messagesUsedHeader = response.headers.get('X-Usage-Messages-Used');
+      const messageLimitHeader = response.headers.get('X-Usage-Messages-Limit');
+      if (messagesUsedHeader && messageLimitHeader) {
+        window.dispatchEvent(
+          new CustomEvent('usage-updated', {
+            detail: {
+              messagesUsed: Number(messagesUsedHeader),
+              messageLimit: Number(messageLimitHeader),
+            },
+          }),
+        );
+      }
+
+      refreshSession().catch(() => undefined);
 
       // Get conversation ID from response header
       const newConversationIdFromHeader = response.headers.get('X-Conversation-Id');
@@ -521,7 +645,14 @@ const ChatInterface = () => {
               setTimeout(() => {
                 fetch(`/api/conversations/${conversationIdForSummary}/summary`, {
                   method: 'POST',
-                }).catch(err => console.error('Failed to generate summary:', err));
+                })
+                  .then((res) => {
+                    if (res.status === 401) {
+                      router.push('/login');
+                    }
+                    return res;
+                  })
+                  .catch(err => console.error('Failed to generate summary:', err));
               }, 2000);
             }
             
@@ -552,7 +683,7 @@ const ChatInterface = () => {
       };
       setMessages(prev => [...prev, errorMessage]);
     }
-  }, [inputValue, isTyping, messages, currentConversationId, assistantType, router, selectedModel, newConversationId]);
+  }, [inputValue, isTyping, messages, currentConversationId, assistantType, router, selectedModel, newConversationId, refreshSession, currentWorkspaceIdFromContext]);
   
   const handleReset = useCallback(() => {
     setMessages([]);
@@ -581,38 +712,231 @@ const ChatInterface = () => {
     }
   }, []);
 
-  const suggestions = [
-    {
-      icon: Lightbulb,
-      title: "Get help with a concept",
-      prompt: "Explain quantum computing in simple terms",
-      color: "text-yellow-500 dark:text-yellow-400"
-    },
-    {
-      icon: MessageSquare,
-      title: "Practice a conversation",
-      prompt: "Help me prepare for a job interview",
-      color: "text-blue-500 dark:text-blue-400"
-    },
-    {
-      icon: BookOpen,
-      title: "Learn something new",
-      prompt: "Teach me about machine learning fundamentals",
-      color: "text-green-500 dark:text-green-400"
-    },
-    {
-      icon: Zap,
-      title: "Get creative ideas",
-      prompt: "Suggest 5 creative project ideas for beginners",
-      color: "text-purple-500 dark:text-purple-400"
+  const handleTextSelectionSend = useCallback((selectedText: string) => {
+    // Set the selected text as the input value
+    setInputValue(selectedText);
+    // Focus the textarea
+    const textarea = document.querySelector('textarea[placeholder*="Ask me anything"]') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.focus();
+      // Move cursor to end
+      textarea.setSelectionRange(selectedText.length, selectedText.length);
     }
-  ];
+    // Clear the text selection
+    window.getSelection()?.removeAllRanges();
+  }, []);
 
-  // Note: Tab-based routing is now handled at the page level
-  // This component only renders chat interface
+  const handleTextSelectionClose = useCallback(() => {
+    // Clear the text selection
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  type AssistantId = (typeof assistantTypes)[number]['id'];
+
+  const defaultSuggestions = useMemo<Suggestion[]>(
+    () => [
+      {
+        icon: Lightbulb,
+        title: 'Get help with a concept',
+        prompt: 'Explain quantum computing in simple terms',
+        color: 'text-yellow-500 dark:text-yellow-400',
+      },
+      {
+        icon: MessageSquare,
+        title: 'Practice a conversation',
+        prompt: 'Help me prepare for a job interview',
+        color: 'text-blue-500 dark:text-blue-400',
+      },
+      {
+        icon: BookOpen,
+        title: 'Learn something new',
+        prompt: 'Teach me about machine learning fundamentals',
+        color: 'text-green-500 dark:text-green-400',
+      },
+      {
+        icon: Zap,
+        title: 'Get creative ideas',
+        prompt: 'Suggest 5 creative project ideas for beginners',
+        color: 'text-purple-500 dark:text-purple-400',
+      },
+    ],
+    [],
+  );
+
+  const assistantSuggestionMap = useMemo<Partial<Record<AssistantId, Suggestion[]>>>(() => {
+    return {
+      therapist: [
+        {
+          icon: Heart,
+          title: 'Wellbeing check-in',
+          prompt: 'Help me create a daily reflection routine to manage stress.',
+          color: 'text-pink-500 dark:text-pink-400',
+        },
+        {
+          icon: Lightbulb,
+          title: 'Mindfulness support',
+          prompt: 'Guide me through a 5-minute grounding exercise.',
+          color: 'text-yellow-500 dark:text-yellow-400',
+        },
+        {
+          icon: MessageSquare,
+          title: 'Difficult conversation prep',
+          prompt: 'Help me express compassion while setting boundaries with a friend.',
+          color: 'text-blue-500 dark:text-blue-400',
+        },
+        {
+          icon: Zap,
+          title: 'Mood boost activities',
+          prompt: 'Suggest weekend activities that can lift my mood.',
+          color: 'text-purple-500 dark:text-purple-400',
+        },
+      ],
+      teacher: [
+        {
+          icon: BookOpen,
+          title: 'Study plan',
+          prompt: 'Design a two-week plan to master calculus fundamentals.',
+          color: 'text-green-500 dark:text-green-400',
+        },
+        {
+          icon: Lightbulb,
+          title: 'Concept explanation',
+          prompt: 'Explain photosynthesis for a classroom presentation.',
+          color: 'text-yellow-500 dark:text-yellow-400',
+        },
+        {
+          icon: MessageSquare,
+          title: 'Quiz practice',
+          prompt: 'Create a 10-question quiz on World War II history.',
+          color: 'text-blue-500 dark:text-blue-400',
+        },
+        {
+          icon: Zap,
+          title: 'Learning games',
+          prompt: 'Suggest interactive ways to teach geometry to middle schoolers.',
+          color: 'text-purple-500 dark:text-purple-400',
+        },
+      ],
+      mentor: [
+        {
+          icon: Briefcase,
+          title: 'Career strategy',
+          prompt: 'Outline a 90-day plan to transition into product management.',
+          color: 'text-slate-500 dark:text-slate-300',
+        },
+        {
+          icon: MessageSquare,
+          title: 'Interview rehearsal',
+          prompt: 'Run a mock interview for a senior software engineer role.',
+          color: 'text-blue-500 dark:text-blue-400',
+        },
+        {
+          icon: Lightbulb,
+          title: 'Skill mapping',
+          prompt: 'Assess my strengths and gaps for a leadership position.',
+          color: 'text-yellow-500 dark:text-yellow-400',
+        },
+        {
+          icon: Zap,
+          title: 'Networking playbook',
+          prompt: 'Draft outreach messages to connect with industry mentors.',
+          color: 'text-purple-500 dark:text-purple-400',
+        },
+      ],
+      coach: [
+        {
+          icon: Heart,
+          title: 'Goal setting',
+          prompt: 'Help me set SMART goals for improving work-life balance.',
+          color: 'text-pink-500 dark:text-pink-400',
+        },
+        {
+          icon: MessageSquare,
+          title: 'Accountability partner',
+          prompt: 'Create a weekly check-in template to track my progress.',
+          color: 'text-blue-500 dark:text-blue-400',
+        },
+        {
+          icon: Lightbulb,
+          title: 'Habit design',
+          prompt: 'Design a morning routine that supports my goals.',
+          color: 'text-yellow-500 dark:text-yellow-400',
+        },
+        {
+          icon: Zap,
+          title: 'Motivation boost',
+          prompt: 'Share affirmations for staying focused under pressure.',
+          color: 'text-purple-500 dark:text-purple-400',
+        },
+      ],
+      tutor: [
+        {
+          icon: BookOpen,
+          title: 'Homework help',
+          prompt: 'Walk me through solving quadratic equations step by step.',
+          color: 'text-green-500 dark:text-green-400',
+        },
+        {
+          icon: MessageSquare,
+          title: 'Exam drill',
+          prompt: 'Build flashcards for key biology vocabulary.',
+          color: 'text-blue-500 dark:text-blue-400',
+        },
+        {
+          icon: Lightbulb,
+          title: 'Concept clarity',
+          prompt: 'Break down Newton’s laws with real-world examples.',
+          color: 'text-yellow-500 dark:text-yellow-400',
+        },
+        {
+          icon: Zap,
+          title: 'Study hacks',
+          prompt: 'Recommend techniques to memorize historical dates.',
+          color: 'text-purple-500 dark:text-purple-400',
+        },
+      ],
+      advisor: [
+        {
+          icon: Code,
+          title: 'Decision framework',
+          prompt: 'Help me compare the pros and cons of two business ideas.',
+          color: 'text-sky-500 dark:text-sky-400',
+        },
+        {
+          icon: MessageSquare,
+          title: 'Quick guidance',
+          prompt: 'Advise me on managing conflicting stakeholder priorities.',
+          color: 'text-blue-500 dark:text-blue-400',
+        },
+        {
+          icon: Lightbulb,
+          title: 'Idea validation',
+          prompt: 'Evaluate a concept for a mental wellness mobile app.',
+          color: 'text-yellow-500 dark:text-yellow-400',
+        },
+        {
+          icon: Zap,
+          title: 'Action plan',
+          prompt: 'Draft a one-page plan to launch a side project in 30 days.',
+          color: 'text-purple-500 dark:text-purple-400',
+        },
+      ],
+    };
+  }, []);
+
+  const suggestions = useMemo(() => {
+    if (effectiveAssistantType && assistantSuggestionMap[effectiveAssistantType as AssistantId]) {
+      return assistantSuggestionMap[effectiveAssistantType as AssistantId] ?? defaultSuggestions;
+    }
+    return defaultSuggestions;
+  }, [assistantSuggestionMap, defaultSuggestions, effectiveAssistantType]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-none md:rounded-xl border-0 md:border bg-background shadow-sm relative">
+    <div 
+      ref={chatInterfaceRef}
+      className="flex h-full w-full flex-col overflow-hidden relative"
+      data-chat-interface
+    >
 
       <ChatHeader
         assistantName={assistantName}
@@ -647,6 +971,25 @@ const ChatInterface = () => {
         onInputChange={setInputValue}
         onModelChange={setSelectedModel}
         onSubmit={handleSubmit}
+      />
+
+      <TextSelectionPopup
+        text={text}
+        rects={rects}
+        isOpen={isSelectionInsideChat && text.length > 0}
+        onClose={handleTextSelectionClose}
+        onSend={handleTextSelectionSend}
+      />
+
+      <EmailVerificationDialog
+        open={verificationDialogOpen}
+        onOpenChange={setVerificationDialogOpen}
+        onVerified={() => {
+          setVerificationDialogOpen(false);
+          refreshSession().catch(() => undefined);
+        }}
+        threshold={verificationData.threshold}
+        messagesUsed={verificationData.messagesUsed}
       />
     </div>
   );

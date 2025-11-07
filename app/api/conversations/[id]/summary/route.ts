@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+import { auth } from '@/auth';
 import { getConversation, updateConversationInsights } from '@/lib/db/conversations';
 import { generateConversationInsights } from '@/lib/ai/summary-generator';
 
@@ -7,6 +9,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id: conversationId } = await params;
 
     if (!conversationId) {
@@ -19,7 +27,7 @@ export async function POST(
     // Get the conversation
     const conversation = await getConversation(conversationId);
 
-    if (!conversation) {
+    if (!conversation || conversation.userId !== session.user.id) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
@@ -50,6 +58,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id: conversationId } = await params;
 
     if (!conversationId) {
@@ -62,7 +76,7 @@ export async function GET(
     // Get the conversation
     const conversation = await getConversation(conversationId);
 
-    if (!conversation) {
+    if (!conversation || conversation.userId !== session.user.id) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }

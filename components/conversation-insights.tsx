@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
@@ -24,6 +25,7 @@ export function ConversationInsightsPanel({
   const [insights, setInsights] = useState<ConversationInsights | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const router = useRouter();
 
   // Fetch existing insights
   useEffect(() => {
@@ -33,6 +35,12 @@ export function ConversationInsightsPanel({
       setIsLoading(true);
       try {
         const response = await fetch(`/api/conversations/${conversationId}/summary`);
+
+        if (response.status === 401) {
+          router.push('/login');
+          return;
+        }
+
         if (response.ok) {
           const data = await response.json();
           setInsights(data.insights);
@@ -55,6 +63,11 @@ export function ConversationInsightsPanel({
       const response = await fetch(`/api/conversations/${conversationId}/summary`, {
         method: 'POST',
       });
+
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
       
       if (response.ok) {
         const data = await response.json();

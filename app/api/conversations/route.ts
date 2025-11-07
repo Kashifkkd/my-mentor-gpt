@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+import { auth } from '@/auth';
 import {
   getConversations,
   createConversation,
@@ -10,14 +12,19 @@ import {
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
-    const userId = searchParams.get('userId') || undefined;
     const workspaceId = searchParams.get('workspaceId') || undefined;
     const assistantType = searchParams.get('assistantType') || undefined;
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
     const conversations = await getConversations(
-      userId,
+      session.user.id,
       workspaceId,
       assistantType,
       limit
@@ -39,12 +46,18 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
-    const { messages = [], userId, workspaceId, assistantType, title, customFields } = body;
+    const { messages = [], workspaceId, assistantType, title, customFields } = body;
 
     const conversationId = await createConversation(
       messages,
-      userId,
+      session.user.id,
       workspaceId,
       assistantType,
       customFields

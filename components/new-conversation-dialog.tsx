@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -25,6 +26,7 @@ import type { AssistantType } from '@/lib/types/assistant';
 import { getAssistantIcon } from '@/lib/assistant-config';
 import { getAssistantFields, type AssistantField } from '@/lib/assistant-fields';
 import React from 'react';
+import { X } from 'lucide-react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -92,6 +94,11 @@ export function NewConversationDialog({
         }),
       });
 
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Failed to create conversation');
       }
@@ -130,6 +137,15 @@ export function NewConversationDialog({
     onOpenChange(newOpen);
   };
 
+  const handleDialogInteractOutside = (event: Event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+
+    if (target.closest('[data-prevent-dialog-close]')) {
+      event.preventDefault();
+    }
+  };
+
   const renderField = (field: AssistantField) => {
     const value = customFields[field.id] || '';
 
@@ -151,7 +167,7 @@ export function NewConversationDialog({
             <SelectTrigger className="w-full">
               <SelectValue placeholder={field.placeholder} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent data-prevent-dialog-close>
               {field.options?.map((option) => (
                 <SelectItem key={option} value={option}>
                   {option}
@@ -187,7 +203,18 @@ export function NewConversationDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="min-w-[60vw] max-w-[600px] sm:w-[600px]">
+      <DialogContent
+        className="min-w-[60vw] max-w-[600px] sm:w-[600px]"
+        onInteractOutside={handleDialogInteractOutside}
+        showCloseButton={false}
+      >
+        <DialogClose
+          onClick={() => handleOpenChange(false)}
+          className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted/60 text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
         <DialogHeader>
           <DialogTitle>New Conversation</DialogTitle>
           <DialogDescription>
