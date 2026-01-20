@@ -69,29 +69,29 @@ export default async function Home() {
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-muted-foreground">
               <Sparkles className="h-4 w-4 text-primary" />
               <span>Personalized mentoring powered by AI</span>
-          </div>
+            </div>
 
             <HeroHeadline />
 
             <p className="mt-6 max-w-2xl text-base text-muted-foreground sm:text-lg">
               Build momentum with AI assistants that coach you through new skills, offer compassionate support, and
               keep every conversation focused on results.
-          </p>
+            </p>
 
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Button asChild size="lg" className="w-full sm:w-auto">
-              <Link href="/chat">
+              <Button asChild size="lg" className="w-full sm:w-auto">
+                <Link href="/chat">
                   <Zap className="mr-2 h-5 w-5" />
                   Start a session
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
                 <Link href="/signup">
                   <ShieldCheck className="mr-2 h-5 w-5" />
                   Create your workspace
-              </Link>
-            </Button>
-          </div>
+                </Link>
+              </Button>
+            </div>
 
             <div className="mt-12 inline-flex items-center gap-2 text-xs text-muted-foreground sm:text-sm">
               <Badge variant="secondary" className="px-3 py-1 text-xs sm:text-sm">
@@ -103,8 +103,8 @@ export default async function Home() {
               <Badge variant="secondary" className="px-3 py-1 text-xs sm:text-sm">
                 Always available
               </Badge>
-                </div>
-              </div>
+            </div>
+          </div>
         </section>
 
         <section
@@ -135,8 +135,8 @@ export default async function Home() {
                   </div>
                 );
               })}
-                </div>
-              </div>
+            </div>
+          </div>
         </section>
 
         <section
@@ -172,8 +172,8 @@ export default async function Home() {
                   </div>
                 );
               })}
-                </div>
-              </div>
+            </div>
+          </div>
         </section>
 
         <PricingSection />
@@ -199,7 +199,7 @@ export default async function Home() {
                   {isAuthenticated ? 'Resume your chat' : 'Create free account'}
                 </Link>
               </Button>
-          </div>
+            </div>
           </div>
         </section>
       </main>
